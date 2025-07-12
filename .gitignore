@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+.DS_Store
+figures/eda_analysis.png
+figures/model_evaluation.png
+figures/threshold_analysis.png
+creditcard.csv
+fraud_model.pkl
+fraud_report.html
+.idea/inspectionProfiles/Project_Default.xml
+figures/shap_importance.png
+figures/vif_analysis.png
