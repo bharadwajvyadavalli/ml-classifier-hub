@@ -21,6 +21,31 @@ def generate_html_report(data_stats, model_results, feature_importance,
     report = model_results['classification_report']
     cm = model_results['confusion_matrix']
     tn, fp, fn, tp = cm.ravel()
+    
+    # Check for data imbalance
+    total_samples = data_stats['total_transactions']
+    fraud_count = data_stats['fraud_count']
+    minority_ratio = fraud_count / total_samples
+    imbalance_ratio = (total_samples - fraud_count) / fraud_count if fraud_count > 0 else float('inf')
+    
+    # Define imbalance red flags
+    imbalance_flags = []
+    if minority_ratio <= 0.01:
+        imbalance_flags.append("CRITICAL: Extreme imbalance (< 1% fraud)")
+    elif minority_ratio <= 0.05:
+        imbalance_flags.append("HIGH: Severe imbalance (< 5% fraud)")
+    elif minority_ratio <= 0.1:
+        imbalance_flags.append("MEDIUM: Moderate imbalance (< 10% fraud)")
+        
+    if fraud_count < 50:
+        imbalance_flags.append("CRITICAL: Too few fraud samples (< 50)")
+    elif fraud_count < 100:
+        imbalance_flags.append("HIGH: Low fraud samples (< 100)")
+        
+    if imbalance_ratio > 100:
+        imbalance_flags.append("CRITICAL: Very high imbalance ratio (> 100:1)")
+    elif imbalance_ratio > 20:
+        imbalance_flags.append("HIGH: High imbalance ratio (> 20:1)")
 
     # Handle both string and integer keys for fraud class
     fraud_key = '1' if '1' in report else (1 if 1 in report else None)
@@ -44,14 +69,9 @@ def generate_html_report(data_stats, model_results, feature_importance,
     net_benefit = fraud_prevented - false_alarm_cost
 
     # Load images
-    eda_img = encode_image(f'{figures_dir}eda_analysis.png')
     eval_img = encode_image(f'{figures_dir}model_evaluation.png')
-    threshold_img = encode_image(f'{figures_dir}threshold_analysis.png') if os.path.exists(
-        f'{figures_dir}threshold_analysis.png') else None
     shap_img = encode_image(f'{figures_dir}shap_importance.png') if os.path.exists(
         f'{figures_dir}shap_importance.png') else None
-    vif_img = encode_image(f'{figures_dir}vif_analysis.png') if os.path.exists(
-        f'{figures_dir}vif_analysis.png') else None
 
     # Generate HTML
     html = f"""
@@ -197,36 +217,12 @@ def generate_html_report(data_stats, model_results, feature_importance,
             border-bottom: 1px solid #e9ecef;
         }}
 
-        .recommendations {{
-            background: #e8f4f8;
-            padding: 25px;
-            border-radius: 10px;
-            border-left: 5px solid #667eea;
-            margin: 30px 0;
-        }}
-
-        .recommendations ul {{
-            margin-left: 20px;
-            margin-top: 15px;
-        }}
-
         .analysis-section {{
             background: #f8f9fa;
             padding: 20px;
             border-radius: 10px;
             margin: 20px 0;
             border: 1px solid #e9ecef;
-        }}
-
-        .vif-high {{
-            background-color: #ffebee;
-            color: #c62828;
-            font-weight: bold;
-        }}
-
-        .vif-ok {{
-            background-color: #e8f5e9;
-            color: #2e7d32;
         }}
 
         code {{
@@ -280,38 +276,6 @@ def generate_html_report(data_stats, model_results, feature_importance,
             </div>
         </div>
 
-        {f'''
-        <div class="analysis-section" style="background: #fff3cd; border-left: 5px solid #ffc107;">
-            <h3>🔑 Key Analysis Findings</h3>
-            <ul>
-                <li><strong>Multicollinearity:</strong> {len([r for r in analysis_results.get('vif_results', []) if r['VIF'] > 10])} features removed due to high VIF (>10)</li>
-                <li><strong>Feature Selection:</strong> {len(analysis_results.get('selected_features', []))} features selected via RFE from {len(analysis_results.get('vif_results', []))} candidates</li>
-                <li><strong>Top Predictors:</strong> {', '.join([r['feature'] for r in analysis_results.get('shap_importance', [])[:3]]) if analysis_results and 'shap_importance' in analysis_results else 'N/A'} show highest SHAP importance</li>
-                <li><strong>Class Balance:</strong> SMOTE applied to address {data_stats['fraud_rate']:.2f}% fraud rate</li>
-            </ul>
-
-            <div style="margin-top: 15px; padding: 15px; background: white; border-radius: 5px;">
-                <strong>Feature Engineering Pipeline:</strong>
-                <div style="display: flex; align-items: center; justify-content: space-around; margin-top: 10px;">
-                    <div style="text-align: center;">
-                        <div style="font-size: 24px; color: #667eea;">30</div>
-                        <div>Original Features</div>
-                    </div>
-                    <div>→</div>
-                    <div style="text-align: center;">
-                        <div style="font-size: 24px; color: #ffc107;">{len(analysis_results.get('vif_results', [])) - len([r for r in analysis_results.get('vif_results', []) if r.get('VIF', 0) > 10]) if analysis_results else 'N/A'}</div>
-                        <div>After VIF Filter</div>
-                    </div>
-                    <div>→</div>
-                    <div style="text-align: center;">
-                        <div style="font-size: 24px; color: #28a745;">{len(analysis_results.get('selected_features', [])) if analysis_results else 'N/A'}</div>
-                        <div>Final Selected</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        ''' if analysis_results else ''}
-
         <h2>📈 Dataset Overview</h2>
         <div class="metrics-grid">
             <div class="metric-card">
@@ -332,8 +296,6 @@ def generate_html_report(data_stats, model_results, feature_importance,
                 <div class="metric-value">${data_stats['avg_fraud_amount']:.2f}</div>
             </div>
         </div>
-
-        <img src="data:image/png;base64,{eda_img}" alt="Exploratory Data Analysis">
 
         <h2>🤖 Model Performance</h2>
         <table>
@@ -371,47 +333,12 @@ def generate_html_report(data_stats, model_results, feature_importance,
 
         <img src="data:image/png;base64,{eval_img}" alt="Model Evaluation">
 
-        {f'<img src="data:image/png;base64,{threshold_img}" alt="Threshold Analysis">' if threshold_img else ''}
-
-        <h2>🔬 Feature Engineering & Analysis</h2>
-        {f'''
-        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
-            <h3>📊 VIF Analysis (Multicollinearity Check)</h3>
-            <p>Variance Inflation Factor identifies multicollinear features:</p>
-
-            {f'<img src="data:image/png;base64,{vif_img}" alt="VIF Analysis">' if vif_img else ''}
-
-            <table style="margin-top: 20px;">
-                <tr>
-                    <th>Feature</th>
-                    <th>VIF Score</th>
-                    <th>Status</th>
-                </tr>
-                {''.join([f'''<tr>
-                    <td>{r["Feature"]}</td>
-                    <td>{r["VIF"]:.2f}</td>
-                    <td class="{'bad' if r["VIF"] > 10 else 'good'}">
-                        {'❌ High (Removed)' if r["VIF"] > 10 else '✅ Acceptable'}
-                    </td>
-                </tr>''' for r in (analysis_results['vif_results'][:10] if analysis_results else [])])}
-            </table>
-            <p style="margin-top: 10px;"><em>Features with VIF > 10 indicate multicollinearity and were removed.</em></p>
+        <h2>📊 Top Features</h2>
+        <div class="feature-list">
+            <h3>Most Important Features for Fraud Detection:</h3>
+            {''.join([f'<div class="feature-item"><span>{feat}</span><span>{imp:.4f}</span></div>'
+                      for feat, imp in feature_importance[:10]])}
         </div>
-
-        <div style="background: #e8f4f8; padding: 20px; border-radius: 10px; margin: 20px 0;">
-            <h3>🎯 Recursive Feature Elimination (RFE)</h3>
-            <p>Selected <strong>{len(analysis_results['selected_features']) if analysis_results else 0}</strong> most important features using RFE:</p>
-            <div class="feature-code">
-                {', '.join(analysis_results['selected_features']) if analysis_results else 'No features selected'}
-            </div>
-        </div>
-
-        <div style="background: #f0f8ff; padding: 20px; border-radius: 10px; margin: 20px 0;">
-            <h3>⚖️ Class Balancing with SMOTE</h3>
-            <p>✅ <strong>SMOTE (Synthetic Minority Over-sampling Technique)</strong> was applied to balance the training data.</p>
-            <p>This helps the model learn better patterns from the minority fraud class.</p>
-        </div>
-        ''' if analysis_results else '<p>No feature engineering details available.</p>'}
 
         {f'''
         <h2>🔍 SHAP Analysis (Model Explainability)</h2>
@@ -434,77 +361,8 @@ def generate_html_report(data_stats, model_results, feature_importance,
                     <td>{'🔴 High' if r["importance"] > 0.1 else '🟡 Medium' if r["importance"] > 0.05 else '🟢 Low'}</td>
                 </tr>''' for i, r in enumerate(analysis_results.get('shap_importance', [])[:10]) if analysis_results])}
             </table>
-
-            <div style="margin-top: 20px;">
-                <p><strong>How to interpret:</strong></p>
-                <ul>
-                    <li>Higher importance values indicate features that strongly influence fraud predictions</li>
-                    <li>SHAP values show the average impact of each feature across all predictions</li>
-                    <li>Features with high importance should be monitored for data quality and drift</li>
-                </ul>
-            </div>
         </div>
         ''' if shap_img and analysis_results else ''}
-
-        <h2>🔍 Confusion Matrix Analysis</h2>
-        <table>
-            <tr>
-                <th>Outcome</th>
-                <th>Count</th>
-                <th>Business Impact</th>
-            </tr>
-            <tr>
-                <td>True Positives (Fraud caught)</td>
-                <td class="good">{tp:,}</td>
-                <td class="good">+${tp * avg_fraud_amount:,.2f} saved</td>
-            </tr>
-            <tr>
-                <td>True Negatives (Normal transactions)</td>
-                <td>{tn:,}</td>
-                <td>No impact</td>
-            </tr>
-            <tr>
-                <td>False Positives (False alarms)</td>
-                <td class="warning">{fp:,}</td>
-                <td class="warning">-${false_alarm_cost:,.2f} in handling costs</td>
-            </tr>
-            <tr>
-                <td>False Negatives (Missed fraud)</td>
-                <td class="bad">{fn:,}</td>
-                <td class="bad">-${fn * avg_fraud_amount:,.2f} potential loss</td>
-            </tr>
-        </table>
-
-        <h2>📊 Top Features</h2>
-        <div class="feature-list">
-            <h3>Most Important Features for Fraud Detection:</h3>
-            {''.join([f'<div class="feature-item"><span>{feat}</span><span>{imp:.4f}</span></div>'
-                      for feat, imp in feature_importance[:10]])}
-        </div>
-
-        <div class="recommendations">
-            <h2>💡 Recommendations</h2>
-            <ul>
-                <li><strong>Current Performance:</strong> The model successfully detects {fraud_caught:.1%} of fraudulent transactions while maintaining a low false positive rate of {false_positive_rate:.2%}.</li>
-                <li><strong>Threshold Tuning:</strong> Consider adjusting the classification threshold based on business priorities. Lower thresholds catch more fraud but increase false alarms.</li>
-                <li><strong>Feature Monitoring:</strong> Monitor the top features ({', '.join([f[0] for f in feature_importance[:3]])}) for data drift.</li>
-                <li><strong>Retraining Schedule:</strong> Retrain the model monthly with new fraud patterns to maintain performance.</li>
-                <li><strong>Cost-Benefit:</strong> Current configuration provides an estimated net benefit of ${net_benefit:,.2f} per test set.</li>
-            </ul>
-        </div>
-
-        <div class="analysis-section">
-            <h2>📋 Methodology Summary</h2>
-            <p>This fraud detection model was built using industry best practices:</p>
-            <ul>
-                <li><strong>Multicollinearity Handling:</strong> VIF analysis to remove redundant features</li>
-                <li><strong>Feature Selection:</strong> Recursive Feature Elimination (RFE) with Logistic Regression</li>
-                <li><strong>Class Imbalance:</strong> SMOTE (Synthetic Minority Over-sampling Technique)</li>
-                <li><strong>Model:</strong> Random Forest with balanced class weights</li>
-                <li><strong>Explainability:</strong> SHAP (SHapley Additive exPlanations) for feature importance</li>
-                <li><strong>Evaluation:</strong> Comprehensive metrics including precision-recall analysis</li>
-            </ul>
-        </div>
 
         <footer>
             <p>Credit Card Fraud Detection System | Model: Random Forest | Framework: scikit-learn</p>

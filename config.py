@@ -21,3 +21,16 @@ FIGURES_DIR = 'figures/'
 
 # Feature selection
 TOP_FEATURES = 15
+
+# Imbalance thresholds (built into ImbalanceDetector)
+# Critical: <1% minority, <50 samples, >100:1 ratio
+# High: <5% minority, <100 samples, >20:1 ratio  
+# Medium: <10% minority, <200 samples, >10:1 ratio
+
+# Fraud detection thresholds
+FRAUD_THRESHOLDS = {
+    'min_fraud_samples': 100,
+    'max_fpr': 0.01,
+    'min_precision': 0.8,
+    'min_recall': 0.7
+}

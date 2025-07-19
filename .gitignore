@@ -215,3 +215,4 @@ fraud_report.html
 .idea/inspectionProfiles/Project_Default.xml
 figures/shap_importance.png
 figures/vif_analysis.png
+figures/roc_analysis.png

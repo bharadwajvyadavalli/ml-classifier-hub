@@ -24,6 +24,30 @@ def train_model(X_train, y_train, model_params):
     return model
 
 
+def calculate_optimal_threshold(y_test, y_pred_proba):
+    """Calculate optimal threshold using Youden's J statistic"""
+    fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba)
+    
+    # Youden's J statistic (Sensitivity + Specificity - 1)
+    # J = TPR - FPR = TPR - (1 - TNR) = TPR + TNR - 1
+    j_scores = tpr - fpr
+    optimal_idx = np.argmax(j_scores)
+    optimal_threshold = thresholds[optimal_idx]
+    optimal_tpr = tpr[optimal_idx]
+    optimal_fpr = fpr[optimal_idx]
+    optimal_j = j_scores[optimal_idx]
+    
+    return {
+        'optimal_threshold': optimal_threshold,
+        'optimal_tpr': optimal_tpr,
+        'optimal_fpr': optimal_fpr,
+        'optimal_j_score': optimal_j,
+        'fpr_curve': fpr,
+        'tpr_curve': tpr,
+        'thresholds': thresholds
+    }
+
+
 def evaluate_model(model, X_test, y_test, save_path='figures/'):
     """Comprehensive model evaluation"""
     os.makedirs(save_path, exist_ok=True)
@@ -64,50 +88,118 @@ def evaluate_model(model, X_test, y_test, save_path='figures/'):
     }
 
 
-def create_evaluation_plots(y_test, y_pred, y_pred_proba, cm, save_path):
-    """Create model evaluation visualizations"""
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-
-    # 1. Confusion Matrix
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[0, 0],
-                xticklabels=['Normal', 'Fraud'], yticklabels=['Normal', 'Fraud'])
-    axes[0, 0].set_title('Confusion Matrix')
-    axes[0, 0].set_ylabel('True Label')
-    axes[0, 0].set_xlabel('Predicted Label')
-
-    # 2. ROC Curve
-    fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+def create_roc_analysis(y_test, y_pred_proba, save_path):
+    """Create simple ROC curve with optimal J-statistic point"""
+    # Calculate optimal threshold
+    optimal_data = calculate_optimal_threshold(y_test, y_pred_proba)
     auc = roc_auc_score(y_test, y_pred_proba)
-    axes[0, 1].plot(fpr, tpr, linewidth=2, label=f'ROC (AUC = {auc:.3f})')
-    axes[0, 1].plot([0, 1], [0, 1], 'k--', linewidth=1)
-    axes[0, 1].set_title('ROC Curve')
-    axes[0, 1].set_xlabel('False Positive Rate')
-    axes[0, 1].set_ylabel('True Positive Rate')
-    axes[0, 1].legend()
-    axes[0, 1].grid(True, alpha=0.3)
+    
+    # Create simple single plot
+    plt.figure(figsize=(8, 6))
+    
+    # Plot ROC curve
+    plt.plot(optimal_data['fpr_curve'], optimal_data['tpr_curve'], linewidth=2, 
+            label=f'ROC Curve (AUC = {auc:.3f})', color='blue')
+    plt.plot([0, 1], [0, 1], 'k--', linewidth=1, label='Random Classifier')
+    
+    # Mark optimal J-statistic point using single values
+    optimal_fpr = optimal_data['optimal_fpr']  # This is the single optimal FPR value
+    optimal_tpr = optimal_data['optimal_tpr']  # This is the single optimal TPR value
+    plt.plot(optimal_fpr, optimal_tpr, 'ro', markersize=10, 
+            label=f"Optimal J-statistic\nThreshold = {optimal_data['optimal_threshold']:.3f}\nTPR = {optimal_tpr:.3f}, FPR = {optimal_fpr:.3f}\nJ = {optimal_data['optimal_j_score']:.3f}")
+    
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve with Optimal J-statistic Point')
+    plt.legend(loc='lower right')
+    plt.grid(True, alpha=0.3)
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+    
+    plt.tight_layout()
+    plt.savefig(f'{save_path}roc_analysis.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    # Print optimal threshold information
+    print(f"\nOptimal J-statistic Analysis:")
+    print(f"  Threshold: {optimal_data['optimal_threshold']:.3f}")
+    print(f"  TPR: {optimal_tpr:.3f}")
+    print(f"  FPR: {optimal_fpr:.3f}")
+    print(f"  J-statistic: {optimal_data['optimal_j_score']:.3f}")
+    
+    return optimal_data
 
-    # 3. Precision-Recall Curve
+
+def create_evaluation_plots(y_test, y_pred, y_pred_proba, cm, save_path):
+    """Create ROC-AUC and PR-AUC curves with J-statistic highlighted"""
+    # Create 1x2 subplot layout
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Calculate ROC curve and J-statistic
+    fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba)
+    auc = roc_auc_score(y_test, y_pred_proba)
+    
+    # Calculate J-statistic
+    j_scores = tpr - fpr
+    optimal_idx = np.argmax(j_scores)
+    optimal_threshold = thresholds[optimal_idx]
+    optimal_tpr = tpr[optimal_idx]
+    optimal_fpr = fpr[optimal_idx]
+    optimal_j = j_scores[optimal_idx]
+    
+    # Plot ROC curve with J-statistic highlighted
+    axes[0].plot(fpr, tpr, linewidth=2, label=f'ROC Curve (AUC = {auc:.3f})', color='blue')
+    axes[0].plot([0, 1], [0, 1], 'k--', linewidth=1, label='Random Classifier')
+    
+    # Mark optimal J-statistic point with clear highlighting
+    axes[0].plot(optimal_fpr, optimal_tpr, 'ro', markersize=12, 
+                label=f"J-statistic = {optimal_j:.3f}\nThreshold = {optimal_threshold:.3f}")
+    
+    # Add annotation for J-statistic
+    axes[0].annotate(f'J = {optimal_j:.3f}', 
+                    xy=(optimal_fpr, optimal_tpr), 
+                    xytext=(optimal_fpr + 0.1, optimal_tpr - 0.1),
+                    arrowprops=dict(arrowstyle='->', color='red', lw=2),
+                    fontsize=12, fontweight='bold', color='red',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
+    
+    axes[0].set_xlabel('False Positive Rate')
+    axes[0].set_ylabel('True Positive Rate')
+    axes[0].set_title('ROC-AUC Curve with J-statistic')
+    axes[0].legend(loc='lower right')
+    axes[0].grid(True, alpha=0.3)
+    axes[0].set_xlim([0, 1])
+    axes[0].set_ylim([0, 1])
+    
+    # Calculate and plot PR curve
     precision, recall, _ = precision_recall_curve(y_test, y_pred_proba)
     ap = average_precision_score(y_test, y_pred_proba)
-    axes[1, 0].plot(recall, precision, linewidth=2, label=f'AP = {ap:.3f}')
-    axes[1, 0].set_title('Precision-Recall Curve')
-    axes[1, 0].set_xlabel('Recall')
-    axes[1, 0].set_ylabel('Precision')
-    axes[1, 0].legend()
-    axes[1, 0].grid(True, alpha=0.3)
-
-    # 4. Probability Distribution
-    axes[1, 1].hist(y_pred_proba[y_test == 0], bins=50, alpha=0.7, label='Normal', density=True)
-    axes[1, 1].hist(y_pred_proba[y_test == 1], bins=50, alpha=0.7, label='Fraud', density=True)
-    axes[1, 1].set_title('Prediction Probability Distribution')
-    axes[1, 1].set_xlabel('Fraud Probability')
-    axes[1, 1].set_ylabel('Density')
-    axes[1, 1].legend()
-    axes[1, 1].set_xlim(0, 1)
-
+    
+    axes[1].plot(recall, precision, linewidth=2, label=f'PR Curve (AP = {ap:.3f})', color='green')
+    
+    # Add baseline for PR curve (proportion of positive class)
+    baseline = y_test.mean()
+    axes[1].axhline(y=baseline, color='k', linestyle='--', 
+                   label=f'Baseline = {baseline:.3f}')
+    
+    axes[1].set_xlabel('Recall')
+    axes[1].set_ylabel('Precision')
+    axes[1].set_title('Precision-Recall Curve')
+    axes[1].legend(loc='lower left')
+    axes[1].grid(True, alpha=0.3)
+    axes[1].set_xlim([0, 1])
+    axes[1].set_ylim([0, 1])
+    
     plt.tight_layout()
     plt.savefig(f'{save_path}model_evaluation.png', dpi=150, bbox_inches='tight')
     plt.close()
+    
+    # Print J-statistic information
+    print(f"\nJ-statistic Analysis:")
+    print(f"  J-statistic: {optimal_j:.3f}")
+    print(f"  Threshold: {optimal_threshold:.3f}")
+    print(f"  TPR: {optimal_tpr:.3f}")
+    print(f"  FPR: {optimal_fpr:.3f}")
 
 
 def analyze_threshold_impact(y_test, y_pred_proba, save_path='figures/'):
@@ -150,16 +242,16 @@ def analyze_threshold_impact(y_test, y_pred_proba, save_path='figures/'):
     return metrics
 
 
-def save_model(model, scaler, feature_names, model_path):
-    """Save model and preprocessing artifacts"""
-    artifacts = {
+def save_model(model, scaler, feature_names, filepath):
+    """Save trained model with metadata"""
+    model_data = {
         'model': model,
         'scaler': scaler,
         'feature_names': feature_names,
         'model_type': 'RandomForest'
     }
-    joblib.dump(artifacts, model_path)
-    print(f"\nModel saved to {model_path}")
+    joblib.dump(model_data, filepath)
+    print(f"Model saved to {filepath}")
 
 
 def perform_shap_analysis(model, X_test, feature_names, save_path='figures/'):

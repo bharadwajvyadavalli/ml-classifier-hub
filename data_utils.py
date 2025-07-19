@@ -19,6 +19,28 @@ def load_data(filepath):
     df = pd.read_csv(filepath)
     print(f"Loaded {len(df):,} transactions")
     print(f"Fraud cases: {df['Class'].sum():,} ({df['Class'].mean() * 100:.2f}%)")
+    
+    # Check for imbalance
+    fraud_count = df['Class'].sum()
+    total_count = len(df)
+    minority_ratio = fraud_count / total_count
+    imbalance_ratio = (total_count - fraud_count) / fraud_count if fraud_count > 0 else float('inf')
+    
+    # Quick imbalance check
+    if minority_ratio <= 0.01:
+        print(f"🚨 CRITICAL: Extreme imbalance ({minority_ratio:.1%} fraud)")
+    elif minority_ratio <= 0.05:
+        print(f"🟠 HIGH: Severe imbalance ({minority_ratio:.1%} fraud)")
+    elif minority_ratio <= 0.1:
+        print(f"🟡 MEDIUM: Moderate imbalance ({minority_ratio:.1%} fraud)")
+    else:
+        print(f"✅ Balanced data ({minority_ratio:.1%} fraud)")
+    
+    if fraud_count < 50:
+        print(f"🚨 CRITICAL: Too few fraud samples ({fraud_count})")
+    elif fraud_count < 100:
+        print(f"🟠 HIGH: Low fraud samples ({fraud_count})")
+    
     return df
 
 
